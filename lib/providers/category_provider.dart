@@ -78,7 +78,7 @@ class CategoryNotifier extends StateNotifier<List<Category>> {
 // Category Provider
 final categoryNotifierProvider = StateNotifierProvider<CategoryNotifier, List<Category>>((ref) {
   final hiveService = ref.watch(hiveServiceProvider);
-  final categoryBox = Hive.box<Category>('categories');
+  final categoryBox = Hive.box<Category>('categories_v2');
   final notifier = CategoryNotifier(categoryBox);
   
   // Initialize default categories on first run
@@ -89,7 +89,7 @@ final categoryNotifierProvider = StateNotifierProvider<CategoryNotifier, List<Ca
 
 // Stream provider for categories
 final categoriesStreamProvider = StreamProvider<List<Category>>((ref) {
-  final categoryBox = Hive.box<Category>('categories');
+  final categoryBox = Hive.box<Category>('categories_v2');
   
   return Stream.periodic(const Duration(milliseconds: 100), (_) {
     final categories = categoryBox.values.toList();

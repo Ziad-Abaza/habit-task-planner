@@ -3,8 +3,8 @@ import '../models/task.dart';
 import '../models/category.dart';
 
 class HiveService {
-  static const String taskBoxName = 'tasks_v1';
-  static const String categoryBoxName = 'categories';
+  static const String taskBoxName = 'tasks_v2';
+  static const String categoryBoxName = 'categories_v2';
 
   Future<void> init() async {
     await Hive.initFlutter();
