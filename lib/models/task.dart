@@ -27,4 +27,28 @@ class Task extends HiveObject {
 
   @HiveField(7)
   bool autoReschedule = false;
+
+  @HiveField(8, defaultValue: false)
+  bool hasReminder = false;
+
+  @HiveField(9)
+  DateTime? reminderTime; // Time for notification
+
+  @HiveField(10)
+  int? notificationId; // For canceling notifications
+
+  // Helper to get reminder time or default to 9 AM on scheduled date
+  DateTime get effectiveReminderTime {
+    if (reminderTime != null) {
+      return reminderTime!;
+    }
+    // Default to 9 AM on the scheduled date
+    return DateTime(
+      scheduledDate.year,
+      scheduledDate.month,
+      scheduledDate.day,
+      9,
+      0,
+    );
+  }
 }

@@ -25,6 +25,8 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
   late int _cycleInterval;
   late bool _autoReschedule;
   late int _selectedCategoryId;
+  late bool _hasReminder;
+  late TimeOfDay _reminderTime;
 
   @override
   void initState() {
@@ -38,12 +40,21 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
       _cycleInterval = widget.taskToEdit!.cycleInterval ?? 1;
       _autoReschedule = widget.taskToEdit!.autoReschedule;
       _selectedCategoryId = widget.taskToEdit!.categoryId;
+      _hasReminder = widget.taskToEdit!.hasReminder;
+      if (widget.taskToEdit!.reminderTime != null) {
+        final time = widget.taskToEdit!.reminderTime!;
+        _reminderTime = TimeOfDay(hour: time.hour, minute: time.minute);
+      } else {
+        _reminderTime = const TimeOfDay(hour: 9, minute: 0);
+      }
     } else {
       _selectedDate = DateTime.now();
       _isCyclic = false;
       _cycleInterval = 1;
       _autoReschedule = false;
       _selectedCategoryId = 0;
+      _hasReminder = false;
+      _reminderTime = const TimeOfDay(hour: 9, minute: 0);
     }
   }
 
@@ -79,6 +90,29 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
     }
   }
 
+  Future<void> _selectTime(BuildContext context) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _reminderTime,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: AppColors.primaryPurple,
+              brightness: Theme.of(context).brightness,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && picked != _reminderTime) {
+      setState(() {
+        _reminderTime = picked;
+      });
+    }
+  }
+
   void _saveTask() {
     if (_formKey.currentState!.validate()) {
       if (widget.taskToEdit != null) {
@@ -90,6 +124,18 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
         widget.taskToEdit!.isCyclic = _isCyclic;
         widget.taskToEdit!.cycleInterval = _isCyclic ? _cycleInterval : null;
         widget.taskToEdit!.autoReschedule = _autoReschedule;
+        widget.taskToEdit!.hasReminder = _hasReminder;
+        if (_hasReminder) {
+          widget.taskToEdit!.reminderTime = DateTime(
+            _selectedDate.year,
+            _selectedDate.month,
+            _selectedDate.day,
+            _reminderTime.hour,
+            _reminderTime.minute,
+          );
+        } else {
+          widget.taskToEdit!.reminderTime = null;
+        }
 
         ref.read(taskNotifierProvider.notifier).updateTask(widget.taskToEdit!);
       } else {
@@ -101,7 +147,17 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
           ..scheduledDate = _selectedDate
           ..isCyclic = _isCyclic
           ..cycleInterval = _isCyclic ? _cycleInterval : null
-          ..autoReschedule = _autoReschedule;
+          ..autoReschedule = _autoReschedule
+          ..hasReminder = _hasReminder
+          ..reminderTime = _hasReminder
+              ? DateTime(
+                  _selectedDate.year,
+                  _selectedDate.month,
+                  _selectedDate.day,
+                  _reminderTime.hour,
+                  _reminderTime.minute,
+                )
+              : null;
 
         ref.read(taskNotifierProvider.notifier).addTask(newTask);
       }
@@ -368,6 +424,46 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
                       _autoReschedule = val;
                     });
                   },
+                ),
+              ),
+              const SizedBox(height: AppTheme.spacingM),
+
+              // Reminder Settings
+              Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                  border: Border.all(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white.withOpacity(0.1)
+                        : Colors.black.withOpacity(0.1),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      secondary: Icon(Icons.notifications_rounded, color: categoryColor),
+                      title: const Text('Set Reminder'),
+                      subtitle: const Text('Get notified about this task'),
+                      value: _hasReminder,
+                      activeColor: categoryColor,
+                      onChanged: (val) {
+                        setState(() {
+                          _hasReminder = val;
+                        });
+                      },
+                    ),
+                    if (_hasReminder) ...[
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const SizedBox(width: 56),
+                        title: const Text('Reminder Time'),
+                        subtitle: Text(_reminderTime.format(context)),
+                        trailing: const Icon(Icons.access_time_rounded, size: 20),
+                        onTap: () => _selectTime(context),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               const SizedBox(height: AppTheme.spacingXL),

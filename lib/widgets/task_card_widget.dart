@@ -292,6 +292,21 @@ class _TaskCardWidgetState extends ConsumerState<TaskCardWidget> {
                                           ],
                                         ),
                                       ),
+                                    // Reminder Indicator
+                                    if (widget.task.hasReminder && !widget.task.isCompleted)
+                                      Container(
+                                        margin: const EdgeInsets.only(left: AppTheme.spacingS),
+                                        padding: const EdgeInsets.all(AppTheme.spacingXS),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.statusToday.withOpacity(0.15),
+                                          borderRadius: BorderRadius.circular(AppTheme.radiusS),
+                                        ),
+                                        child: Icon(
+                                          Icons.notifications_active_rounded,
+                                          size: 14,
+                                          color: AppColors.statusToday,
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ],
