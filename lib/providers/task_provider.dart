@@ -39,12 +39,78 @@ class TaskNotifier extends StateNotifier<AsyncValue<List<Task>>> {
   }
 
   Future<void> addTask(Task task) async {
+    if (task.isCyclic && task.recurrenceType == RecurrenceType.weekly && task.weekdays.isNotEmpty) {
+      // For tasks with specific weekdays, ensure the scheduled date is one of the selected days
+      if (!task.weekdays.contains(task.scheduledDate.weekday)) {
+        // Find the next occurrence from today
+        final now = DateTime.now();
+        for (int i = 0; i < 7; i++) {
+          final date = now.add(Duration(days: i));
+          if (task.weekdays.contains(date.weekday)) {
+            task.scheduledDate = DateTime(
+              date.year,
+              date.month,
+              date.day,
+              task.scheduledDate.hour,
+              task.scheduledDate.minute,
+            );
+            break;
+          }
+        }
+      }
+    }
+    
     await _hiveService.saveTask(task);
     // Schedule notification if reminder is set
     if (task.hasReminder) {
       await _notificationService.scheduleTaskReminder(task);
+      
+      // Schedule future occurrences if it's a recurring task with specific weekdays
+      if (task.isCyclic && task.recurrenceType == RecurrenceType.weekly && task.weekdays.isNotEmpty) {
+        await _scheduleFutureTaskOccurrences(task);
+      }
     }
-    // Stream will update the UI
+  }
+  
+  Future<void> _scheduleFutureTaskOccurrences(Task task) async {
+    if (!task.isCyclic || task.weekdays.isEmpty) return;
+    
+    final now = DateTime.now();
+    final nextMonth = DateTime(now.year, now.month + 1, now.day);
+    
+    // Schedule for the next 30 days
+    for (int i = 1; i <= 30; i++) {
+      final date = now.add(Duration(days: i));
+      if (task.weekdays.contains(date.weekday)) {
+        final occurrence = Task()
+          ..title = task.title
+          ..description = task.description
+          ..categoryId = task.categoryId
+          ..scheduledDate = DateTime(
+            date.year,
+            date.month,
+            date.day,
+            task.scheduledDate.hour,
+            task.scheduledDate.minute,
+          )
+          ..isCyclic = false // This is a specific occurrence
+          ..hasReminder = task.hasReminder
+          ..reminderTime = task.reminderTime != null
+              ? DateTime(
+                  date.year,
+                  date.month,
+                  date.day,
+                  task.reminderTime!.hour,
+                  task.reminderTime!.minute,
+                )
+              : null;
+              
+        await _hiveService.saveTask(occurrence);
+        if (occurrence.hasReminder) {
+          await _notificationService.scheduleTaskReminder(occurrence);
+        }
+      }
+    }
   }
 
   Future<void> updateTask(Task task) async {
@@ -82,17 +148,46 @@ class TaskNotifier extends StateNotifier<AsyncValue<List<Task>>> {
   }
 
   Future<void> _createNextCycleTask(Task completedTask) async {
-    final nextDate = completedTask.scheduledDate.add(Duration(days: completedTask.cycleInterval!));
+    if (!completedTask.isCyclic) return;
+    
+    final nextDate = completedTask.getNextOccurrence(completedTask.scheduledDate.add(const Duration(seconds: 1)));
+    if (nextDate == null) return;
+    
     final newTask = Task()
       ..title = completedTask.title
       ..description = completedTask.description
       ..categoryId = completedTask.categoryId
       ..scheduledDate = nextDate
-      ..isCyclic = true
-      ..cycleInterval = completedTask.cycleInterval
-      ..autoReschedule = completedTask.autoReschedule;
+      ..recurrenceType = completedTask.recurrenceType
+      ..interval = completedTask.interval
+      ..autoReschedule = completedTask.autoReschedule
+      ..hasReminder = completedTask.hasReminder
+      ..reminderTime = completedTask.reminderTime
+      ..weekdays = List.from(completedTask.weekdays)
+      ..useDayOfMonth = completedTask.useDayOfMonth
+      ..dayOfMonth = completedTask.dayOfMonth
+      ..weekOfMonth = completedTask.weekOfMonth
+      ..endDate = completedTask.endDate
+      ..maxOccurrences = completedTask.maxOccurrences;
       
     await _hiveService.saveTask(newTask);
+    
+    // Schedule notification for the new task if needed
+    if (newTask.hasReminder) {
+      await _notificationService.scheduleTaskReminder(newTask);
+    }
+  }
+
+  Future<List<Task>> getTasksForDate(DateTime date) async {
+    final tasks = _hiveService.getAllTasks();
+    return tasks.where((task) => task.occursOnDate(date)).toList();
+  }
+
+  Future<void> testNotification() async {
+    await _notificationService.showImmediateNotification(
+      title: 'Test Notification',
+      body: 'This is a test notification to verify the system works.',
+    );
   }
 
   Future<void> checkAndRescheduleOverdue() async {
@@ -101,7 +196,19 @@ class TaskNotifier extends StateNotifier<AsyncValue<List<Task>>> {
     final today = DateTime(now.year, now.month, now.day);
     
     for (var task in tasks) {
-      if (!task.isCompleted && task.autoReschedule && task.scheduledDate.isBefore(today)) {
+      if (task.isCompleted || !task.autoReschedule) continue;
+      
+      if (task.isCyclic) {
+        // For recurring tasks, find the next occurrence
+        final nextOccurrence = task.getNextOccurrence(today.subtract(const Duration(days: 1)));
+        if (nextOccurrence != null && 
+            (task.scheduledDate.isBefore(today) || 
+             nextOccurrence.isAfter(task.scheduledDate))) {
+          task.scheduledDate = nextOccurrence;
+          await _hiveService.saveTask(task);
+        }
+      } else if (task.scheduledDate.isBefore(today)) {
+        // For one-time tasks, reschedule to today
         task.scheduledDate = today;
         await _hiveService.saveTask(task);
       }

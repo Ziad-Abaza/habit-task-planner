@@ -209,8 +209,9 @@ class _CategoryManagerScreenState extends ConsumerState<CategoryManagerScreen> {
     );
   }
 
-  void _deleteCategory(Category category) {
-    showDialog(
+  Future<void> _deleteCategory(Category category) async {
+    // Show confirmation dialog
+    final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(
@@ -220,20 +221,71 @@ class _CategoryManagerScreenState extends ConsumerState<CategoryManagerScreen> {
         content: Text('Are you sure you want to delete "${category.name}"?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
-              ref.read(categoryNotifierProvider.notifier).deleteCategory(category);
-              Navigator.pop(context);
-            },
+            onPressed: () => Navigator.pop(context, true),
             style: FilledButton.styleFrom(backgroundColor: AppColors.priorityHigh),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
+
+    if (shouldDelete != true) return;
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      // Try to delete the category
+      final errorMessage = await ref.read(categoryNotifierProvider.notifier).deleteCategory(category);
+      
+      // Dismiss loading indicator
+      if (context.mounted) {
+        Navigator.pop(context);
+      }
+      
+      // Show error message if any
+      if (errorMessage != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: AppColors.priorityHigh,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusM),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // Dismiss loading indicator
+      if (context.mounted) {
+        Navigator.pop(context);
+      }
+      
+      // Show error message
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Failed to delete category. Please try again.'),
+            backgroundColor: AppColors.priorityHigh,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusM),
+            ),
+          ),
+        );
+      }
+    }
   }
 
   @override

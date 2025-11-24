@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/category.dart';
-import '../services/hive_service.dart';
+import '../models/task.dart';
 import 'task_provider.dart';
 
 // Category Notifier
@@ -30,12 +30,27 @@ class CategoryNotifier extends StateNotifier<List<Category>> {
     _loadCategories();
   }
 
+  // Check if category is being used by any tasks
+  Future<bool> isCategoryInUse(Category category) async {
+    final taskBox = Hive.box<Task>('tasks_v2');
+    final tasks = taskBox.values.toList();
+    return tasks.any((task) => task.categoryId == category.key);
+  }
+
   // Delete category
-  Future<void> deleteCategory(Category category) async {
-    if (!category.isDefault) {
-      await category.delete();
-      _loadCategories();
+  Future<String?> deleteCategory(Category category) async {
+    if (category.isDefault) {
+      return 'Default categories cannot be deleted';
     }
+    
+    final inUse = await isCategoryInUse(category);
+    if (inUse) {
+      return 'This category is being used by one or more tasks. Please reassign or delete those tasks first.';
+    }
+    
+    await category.delete();
+    _loadCategories();
+    return null; // No error
   }
 
   // Reorder categories
@@ -55,16 +70,6 @@ class CategoryNotifier extends StateNotifier<List<Category>> {
     _loadCategories();
   }
 
-  // Initialize default categories if none exist
-  Future<void> initializeDefaultCategories() async {
-    if (categoryBox.isEmpty) {
-      final defaultCategories = Category.getDefaultCategories();
-      for (var category in defaultCategories) {
-        await categoryBox.add(category);
-      }
-      _loadCategories();
-    }
-  }
 
   // Get category by index (for backward compatibility with categoryId)
   Category? getCategoryByIndex(int index) {
@@ -72,6 +77,15 @@ class CategoryNotifier extends StateNotifier<List<Category>> {
       return state[index];
     }
     return null;
+  }
+
+  // Initialize with a single default category if no categories exist
+  Future<void> initializeDefaultCategory() async {
+    if (categoryBox.isEmpty) {
+      final defaultCategory = Category.getDefaultCategory();
+      await categoryBox.add(defaultCategory);
+      _loadCategories();
+    }
   }
 }
 
@@ -81,8 +95,8 @@ final categoryNotifierProvider = StateNotifierProvider<CategoryNotifier, List<Ca
   final categoryBox = Hive.box<Category>('categories_v2');
   final notifier = CategoryNotifier(categoryBox);
   
-  // Initialize default categories on first run
-  notifier.initializeDefaultCategories();
+  // Initialize default category on first run
+  notifier.initializeDefaultCategory();
   
   return notifier;
 });

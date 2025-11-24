@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:share_plus/share_plus.dart';
 import '../providers/task_provider.dart';
 import '../providers/category_provider.dart';
-import '../models/task.dart';
 import '../widgets/task_card_widget.dart';
 import '../widgets/category_chip.dart';
 import '../widgets/empty_state_widget.dart';
-import '../widgets/stats_card.dart';
+import '../widgets/app_drawer.dart';
 import '../utils/app_colors.dart';
 import '../utils/app_theme.dart';
 import 'add_task_screen.dart';
@@ -25,6 +26,8 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int? _selectedCategoryId;
+  bool _isSelectionMode = false;
+  final Set<String> _selectedTaskIds = {};
 
   @override
   void initState() {
@@ -37,168 +40,261 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     await ref.read(taskNotifierProvider.notifier).checkAndRescheduleOverdue();
   }
 
+  void _toggleSelectionMode() {
+    setState(() {
+      _isSelectionMode = !_isSelectionMode;
+      _selectedTaskIds.clear();
+    });
+  }
+
+  void _toggleTaskSelection(String taskId) {
+    setState(() {
+      if (_selectedTaskIds.contains(taskId)) {
+        _selectedTaskIds.remove(taskId);
+        if (_selectedTaskIds.isEmpty) {
+          _isSelectionMode = false;
+        }
+      } else {
+        _selectedTaskIds.add(taskId);
+      }
+    });
+  }
+
+  Future<void> _deleteSelectedTasks() async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Tasks'),
+        content: Text('Delete ${_selectedTaskIds.length} selected tasks?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.priorityHigh),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDelete == true) {
+      final notifier = ref.read(taskNotifierProvider.notifier);
+      final tasks = ref.read(tasksStreamProvider).value ?? [];
+      
+      for (final taskId in _selectedTaskIds) {
+        final task = tasks.firstWhere((t) => t.key.toString() == taskId, orElse: () => tasks.first);
+        if (task.key.toString() == taskId) {
+          await notifier.deleteTask(task);
+        }
+      }
+      _toggleSelectionMode();
+    }
+  }
+
+  Future<void> _completeSelectedTasks() async {
+    final notifier = ref.read(taskNotifierProvider.notifier);
+    final tasks = ref.read(tasksStreamProvider).value ?? [];
+    
+    for (final taskId in _selectedTaskIds) {
+      final task = tasks.firstWhere((t) => t.key.toString() == taskId, orElse: () => tasks.first);
+      if (task.key.toString() == taskId && !task.isCompleted) {
+        await notifier.toggleTaskCompletion(task);
+      }
+    }
+    _toggleSelectionMode();
+  }
+
+  Future<void> _shareSelectedTasks() async {
+    final tasks = ref.read(tasksStreamProvider).value ?? [];
+    final selectedTasks = tasks.where((t) => _selectedTaskIds.contains(t.key.toString())).toList();
+    
+    if (selectedTasks.isEmpty) return;
+
+    final buffer = StringBuffer();
+    buffer.writeln('📋 *My Tasks*');
+    buffer.writeln('----------------------------------------');
+    
+    for (final task in selectedTasks) {
+      final status = task.isCompleted ? "✅ Done" : "⭕ Pending";
+      final date = DateFormat('MMM d, y').format(task.scheduledDate);
+      final category = AppColors.getCategoryName(task.categoryId);
+      
+      buffer.writeln('$status: *${task.title}*');
+      buffer.writeln('   📅 Due: $date');
+      buffer.writeln('   🏷️ Category: $category');
+      
+      if (task.description != null && task.description!.isNotEmpty) {
+        buffer.writeln('   📝 Note: ${task.description}');
+      }
+      
+      if (task.isCyclic) {
+        buffer.writeln('   🔄 Repeat: ${task.getRecurrenceDescription()}');
+      }
+      
+      buffer.writeln('----------------------------------------');
+    }
+
+    await Share.share(buffer.toString());
+    _toggleSelectionMode();
+  }
+
   @override
   Widget build(BuildContext context) {
     final tasksAsync = ref.watch(tasksStreamProvider);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final dateStr = DateFormat('EEEE, d MMMM').format(now);
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     return Scaffold(
+      drawer: const AppDrawer(),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _refreshTasks,
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              // Custom App Bar
-              SliverToBoxAdapter(
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: AppColors.primaryGradient,
-                    borderRadius: const BorderRadius.only(
-                      bottomLeft: Radius.circular(AppTheme.radiusXL),
-                      bottomRight: Radius.circular(AppTheme.radiusXL),
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppTheme.spacingL),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'My Day',
-                                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  dateStr,
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                        color: Colors.white.withOpacity(0.9),
-                                      ),
-                                ),
-                              ],
-                            ),
-                            Row(
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.category_rounded, color: Colors.white),
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(builder: (_) => const CategoryManagerScreen()),
-                                    );
-                                  },
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.insights_rounded, color: Colors.white),
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(builder: (_) => const StatsScreen()),
-                                    );
-                                  },
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.calendar_month_rounded, color: Colors.white),
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(builder: (_) => const CalendarScreen()),
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                          ],
+              // App Bar with Greeting or Selection Mode
+              SliverAppBar(
+                expandedHeight: 100,
+                floating: false,
+                pinned: true,
+                backgroundColor: AppColors.primaryPurple,
+                leading: _isSelectionMode
+                    ? IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.white),
+                        onPressed: _toggleSelectionMode,
+                      )
+                    : null,
+                flexibleSpace: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return FlexibleSpaceBar(
+                      centerTitle: _isSelectionMode,
+                      title: _isSelectionMode
+                          ? Text(
+                              '${_selectedTaskIds.length} Selected',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 18,
+                              ),
+                            )
+                          : null,
+                      collapseMode: CollapseMode.pin,
+                      background: Container(
+                        decoration: BoxDecoration(
+                          gradient: AppColors.primaryGradient,
+                          borderRadius: const BorderRadius.only(
+                            bottomLeft: Radius.circular(AppTheme.radiusXL),
+                            bottomRight: Radius.circular(AppTheme.radiusXL),
+                          ),
                         ),
-                        const SizedBox(height: AppTheme.spacingL),
-                        // Quick Stats
-                        tasksAsync.when(
-                          data: (allTasks) {
-                            final todaysTasks = allTasks.where((t) {
-                              final tDate = DateTime(t.scheduledDate.year, t.scheduledDate.month, t.scheduledDate.day);
-                              return tDate.isAtSameMomentAs(today);
-                            }).toList();
-
-                            final completedToday = todaysTasks.where((t) => t.isCompleted).length;
-                            final totalToday = todaysTasks.length;
-                            final completionRate = totalToday > 0 ? (completedToday / totalToday * 100).toInt() : 0;
-
-                            return Row(
-                              children: [
-                                Expanded(
-                                  child: _QuickStatCard(
-                                    icon: Icons.check_circle_rounded,
-                                    value: '$completedToday/$totalToday',
-                                    label: 'Completed',
-                                  ),
-                                ),
-                                const SizedBox(width: AppTheme.spacingM),
-                                Expanded(
-                                  child: _QuickStatCard(
-                                    icon: Icons.trending_up_rounded,
-                                    value: '$completionRate%',
-                                    label: 'Rate',
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                          loading: () => const SizedBox.shrink(),
-                          error: (_, __) => const SizedBox.shrink(),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacingM,
+                          vertical: AppTheme.spacingS,
                         ),
-                      ],
-                    ),
-                  ),
+                        child: SafeArea(
+                          bottom: false,
+                          child: _isSelectionMode
+                              ? const SizedBox() // Empty background for selection mode
+                              : Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildAppBar(),
+                                    const SizedBox(height: AppTheme.spacingS),
+                                    _buildDateHeader(dateStr),
+                                  ],
+                                ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
-              // Category Filter
+              
+              // Category Filter Section
               SliverToBoxAdapter(
-                child: Container(
-                  height: 60,
-                  margin: const EdgeInsets.only(top: AppTheme.spacingL),
-                  child: Consumer(
-                    builder: (context, ref, child) {
-                      final categories = ref.watch(categoryNotifierProvider);
-                      
-                      return ListView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacingM),
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(right: AppTheme.spacingS),
-                            child: CategoryChip(
-                              categoryId: -1,
-                              isSelected: _selectedCategoryId == null,
-                              onTap: () => setState(() => _selectedCategoryId = null),
-                              showIcon: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.spacingL,
+                        vertical: AppTheme.spacingS,
+                      ),
+                      child: Text(
+                        'Categories',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).textTheme.bodyLarge?.color,
                             ),
-                          ),
-                          ...categories.asMap().entries.map((entry) {
-                            final index = entry.key;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: AppTheme.spacingS),
-                              child: CategoryChip(
-                                categoryId: index,
-                                isSelected: _selectedCategoryId == index,
-                                onTap: () => setState(() => _selectedCategoryId = index),
-                              ),
-                            );
-                          }),
-                        ],
-                      );
-                    },
-                  ),
+                      ),
+                    ),
+                    Container(
+                      height: 50,
+                      margin: const EdgeInsets.only(bottom: AppTheme.spacingS),
+                      child: Consumer(
+                        builder: (context, ref, child) {
+                          final categories = ref.watch(categoryNotifierProvider);
+                          
+                          return ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacingM),
+                            itemCount: categories.length + 1, // +1 for 'All' category
+                            itemBuilder: (context, index) {
+                              // First item is 'All' category
+                              if (index == 0) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: AppTheme.spacingS),
+                                  child: CategoryChip(
+                                    categoryId: -1,
+                                    isSelected: _selectedCategoryId == null,
+                                    onTap: () => setState(() => _selectedCategoryId = null),
+                                    showIcon: true,
+                                    icon: Icons.grid_view_rounded,
+                                  ),
+                                );
+                              }
+                              
+                              // Other categories
+                              final categoryIndex = index - 1;
+                              if (categoryIndex < categories.length) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: AppTheme.spacingS),
+                                  child: CategoryChip(
+                                    categoryId: categoryIndex,
+                                    isSelected: _selectedCategoryId == categoryIndex,
+                                    onTap: () => setState(() => _selectedCategoryId = categoryIndex),
+                                  ),
+                                );
+                              }
+                              
+                              // Add category button
+                              return Padding(
+                                padding: const EdgeInsets.only(left: 4.0),
+                                child: _AddCategoryButton(
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => const CategoryManagerScreen(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
               // Tasks List
@@ -244,7 +340,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             child: SlideAnimation(
                               verticalOffset: 50.0,
                               child: FadeInAnimation(
-                                child: TaskCardWidget(task: todaysTasks[index]),
+                                child: TaskCardWidget(
+                                  task: todaysTasks[index],
+                                  isSelectionMode: _isSelectionMode,
+                                  isSelected: _selectedTaskIds.contains(todaysTasks[index].key.toString()),
+                                  onLongPress: () {
+                                    if (!_isSelectionMode) {
+                                      _toggleSelectionMode();
+                                      _toggleTaskSelection(todaysTasks[index].key.toString());
+                                    }
+                                  },
+                                  onSelectionTap: () => _toggleTaskSelection(todaysTasks[index].key.toString()),
+                                ),
                               ),
                             ),
                           );
@@ -274,69 +381,209 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const AddTaskScreen()),
-          );
-        },
-        label: const Text('New Task'),
-        icon: const Icon(Icons.add_rounded),
+      bottomNavigationBar: _isSelectionMode
+          ? Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, -5),
+                  ),
+                ],
+              ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.spacingM,
+                    vertical: AppTheme.spacingS,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildBulkActionButton(
+                        icon: Icons.delete_outline_rounded,
+                        label: 'Delete',
+                        color: AppColors.priorityHigh,
+                        onTap: _selectedTaskIds.isEmpty ? null : _deleteSelectedTasks,
+                      ),
+                      _buildBulkActionButton(
+                        icon: Icons.check_circle_outline_rounded,
+                        label: 'Complete',
+                        color: AppColors.statusCompleted,
+                        onTap: _selectedTaskIds.isEmpty ? null : _completeSelectedTasks,
+                      ),
+                      _buildBulkActionButton(
+                        icon: Icons.share_outlined,
+                        label: 'Share',
+                        color: AppColors.primaryPurple,
+                        onTap: _selectedTaskIds.isEmpty ? null : _shareSelectedTasks,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          : null,
+      floatingActionButton: _isSelectionMode
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AddTaskScreen()),
+                );
+              },
+              label: const Text('New Task'),
+              icon: const Icon(Icons.add_rounded),
+            ),
+    );
+  }
+
+  Widget _buildBulkActionButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback? onTap,
+  }) {
+    final isEnabled = onTap != null;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppTheme.radiusM),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacingL,
+          vertical: AppTheme.spacingS,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: isEnabled ? color : Colors.grey,
+              size: 24,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isEnabled ? color : Colors.grey,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildAppBar() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.calendar_today_rounded, color: Colors.white, size: 20),
+          padding: const EdgeInsets.all(8),
+          constraints: const BoxConstraints(),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const CalendarScreen()),
+            );
+          },
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          icon: const Icon(Icons.notifications_active, color: Colors.white, size: 20),
+          padding: const EdgeInsets.all(8),
+          constraints: const BoxConstraints(),
+          onPressed: () async {
+            print('Test Notification button pressed');
+            try {
+              await ref.read(taskNotifierProvider.notifier).testNotification();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Test notification sent')),
+              );
+            } catch (e) {
+              print('Error sending test notification: $e');
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Error: $e')),
+              );
+            }
+          },
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          icon: const Icon(Icons.bar_chart_rounded, color: Colors.white, size: 20),
+          padding: const EdgeInsets.all(8),
+          constraints: const BoxConstraints(),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const StatsScreen()),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateHeader(String dateStr) {
+    return Text(
+      dateStr,
+      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: Colors.white.withOpacity(0.9),
+            fontWeight: FontWeight.w500,
+          ),
     );
   }
 }
 
-class _QuickStatCard extends StatelessWidget {
-  final IconData icon;
-  final String value;
-  final String label;
+class _AddCategoryButton extends StatelessWidget {
+  final VoidCallback onPressed;
 
-  const _QuickStatCard({
-    required this.icon,
-    required this.value,
-    required this.label,
+  const _AddCategoryButton({
+    required this.onPressed,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(AppTheme.spacingM),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(AppTheme.radiusL),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.3),
-          width: 1,
+    return GestureDetector(
+      onTap: onPressed,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 10,
         ),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white, size: 24),
-          const SizedBox(width: AppTheme.spacingS),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                value,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                label,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.9),
-                  fontSize: 12,
-                ),
-              ),
-            ],
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Theme.of(context).dividerColor.withOpacity(0.5),
+            width: 1,
           ),
-        ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.add_circle_outline_rounded,
+              size: 20,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Add',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w500,
+                  ),
+            ),
+          ],
+        ),
       ),
     );
   }

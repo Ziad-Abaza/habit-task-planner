@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../utils/app_colors.dart';
 import '../utils/app_theme.dart';
 import '../providers/category_provider.dart';
 
-class CategoryChip extends ConsumerWidget {
+class CategoryChip extends ConsumerStatefulWidget {
   final int categoryId;
   final bool isSelected;
   final VoidCallback onTap;
   final bool showIcon;
+  final IconData? icon;
 
   const CategoryChip({
     super.key,
@@ -16,25 +18,69 @@ class CategoryChip extends ConsumerWidget {
     required this.isSelected,
     required this.onTap,
     this.showIcon = true,
+    this.icon,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CategoryChip> createState() => _CategoryChipState();
+}
+
+class _CategoryChipState extends ConsumerState<CategoryChip> with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _scaleAnimation;
+  bool _isPressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _onTapDown(TapDownDetails details) {
+    setState(() => _isPressed = true);
+    _animationController.forward();
+  }
+
+  void _onTapUp(TapUpDetails details) {
+    setState(() => _isPressed = false);
+    _animationController.reverse();
+    widget.onTap();
+  }
+
+  void _onTapCancel() {
+    setState(() => _isPressed = false);
+    _animationController.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Handle "All" category
-    if (categoryId == -1) {
+    if (widget.categoryId == -1) {
       return _buildChip(
         context,
         'All',
         AppColors.primaryPurple,
-        Icons.grid_view_rounded,
+        widget.icon ?? Icons.grid_view_rounded,
       );
     }
 
     // Get category from provider
     final categories = ref.watch(categoryNotifierProvider);
     
-    if (categoryId >= 0 && categoryId < categories.length) {
-      final category = categories[categoryId];
+    if (widget.categoryId >= 0 && widget.categoryId < categories.length) {
+      final category = categories[widget.categoryId];
       return _buildChip(
         context,
         category.name,
@@ -46,9 +92,9 @@ class CategoryChip extends ConsumerWidget {
     // Fallback to default colors if category not found
     return _buildChip(
       context,
-      AppColors.getCategoryName(categoryId),
-      AppColors.getCategoryColor(categoryId),
-      AppColors.getCategoryIcon(categoryId),
+      AppColors.getCategoryName(widget.categoryId),
+      AppColors.getCategoryColor(widget.categoryId),
+      AppColors.getCategoryIcon(widget.categoryId),
     );
   }
 
@@ -58,52 +104,92 @@ class CategoryChip extends ConsumerWidget {
     Color color,
     IconData icon,
   ) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    
+    // Calculate text color based on background brightness
+    final textColor = widget.isSelected 
+        ? Colors.white 
+        : color.computeLuminance() > 0.5 
+            ? Colors.black87 
+            : color;
+
     return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: AppTheme.durationFast,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTheme.spacingM,
-          vertical: AppTheme.spacingS,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected ? color : color.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-          border: Border.all(
-            color: isSelected ? color : color.withOpacity(0.3),
-            width: 1.5,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: color.withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (showIcon) ...[
-              Icon(
-                icon,
-                size: 18,
-                color: isSelected ? Colors.white : color,
+      onTapDown: _onTapDown,
+      onTapUp: _onTapUp,
+      onTapCancel: _onTapCancel,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedBuilder(
+        animation: _animationController,
+        builder: (context, child) {
+          return Transform.scale(
+            scale: _scaleAnimation.value,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              decoration: BoxDecoration(
+                color: widget.isSelected 
+                    ? color 
+                    : color.withOpacity(isDarkMode ? 0.15 : 0.08),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: widget.isSelected 
+                      ? color 
+                      : color.withOpacity(0.4),
+                  width: 1.2,
+                ),
+                boxShadow: widget.isSelected
+                    ? [
+                        BoxShadow(
+                          color: color.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                          spreadRadius: 0,
+                        ),
+                      ]
+                    : null,
               ),
-              const SizedBox(width: AppTheme.spacingXS),
-            ],
-            Text(
-              name,
-              style: TextStyle(
-                color: isSelected ? Colors.white : color,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: widget.onTap,
+                  borderRadius: BorderRadius.circular(20),
+                  splashColor: color.withOpacity(0.2),
+                  highlightColor: color.withOpacity(0.1),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.showIcon) ...[
+                          Icon(
+                            icon,
+                            size: 18,
+                            color: widget.isSelected ? Colors.white : color,
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Text(
+                          name,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: textColor,
+                            fontWeight: widget.isSelected 
+                                ? FontWeight.w600 
+                                : FontWeight.w500,
+                            fontSize: 13.5,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

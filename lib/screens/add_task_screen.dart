@@ -21,40 +21,118 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
   final _titleController = TextEditingController();
   final _descController = TextEditingController();
   late DateTime _selectedDate;
-  late bool _isCyclic;
-  late int _cycleInterval;
+  late RecurrenceType _recurrenceType;
+  late int _interval;
   late bool _autoReschedule;
   late int _selectedCategoryId;
   late bool _hasReminder;
   late TimeOfDay _reminderTime;
+  late List<int> _selectedWeekdays;
+  late bool _useDayOfMonth;
+  late int _dayOfMonth;
+  late int _weekOfMonth;
+  late DateTime? _endDate;
+  late int _maxOccurrences;
+  bool _isCyclic = false;
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
+      ),
+    );
+  }
+
+  Widget _buildRecurrenceSettings() {
+    return DropdownButtonFormField<RecurrenceType>(
+      initialValue: _recurrenceType,
+      decoration: InputDecoration(
+        labelText: 'Repeat',
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      ),
+      items: RecurrenceType.values.map((type) {
+        return DropdownMenuItem(
+          value: type,
+          child: Text(
+            type.toString().split('.').last,
+            style: const TextStyle(fontSize: 16),
+          ),
+        );
+      }).toList(),
+      onChanged: (RecurrenceType? newValue) {
+        if (newValue != null) {
+          setState(() {
+            _recurrenceType = newValue;
+          });
+        }
+      },
+    );
+  }
+
+  Widget _buildAutoReschedule() {
+    return SwitchListTile(
+      title: const Text('Auto-reschedule'),
+      subtitle: const Text('Automatically reschedule if not completed on time'),
+      value: _autoReschedule,
+      onChanged: (value) {
+        setState(() {
+          _autoReschedule = value;
+        });
+      },
+    );
+  }
 
   @override
   void initState() {
     super.initState();
     // Initialize with existing task data or defaults
     if (widget.taskToEdit != null) {
-      _titleController.text = widget.taskToEdit!.title;
-      _descController.text = widget.taskToEdit!.description ?? '';
-      _selectedDate = widget.taskToEdit!.scheduledDate;
-      _isCyclic = widget.taskToEdit!.isCyclic;
-      _cycleInterval = widget.taskToEdit!.cycleInterval ?? 1;
-      _autoReschedule = widget.taskToEdit!.autoReschedule;
-      _selectedCategoryId = widget.taskToEdit!.categoryId;
-      _hasReminder = widget.taskToEdit!.hasReminder;
-      if (widget.taskToEdit!.reminderTime != null) {
-        final time = widget.taskToEdit!.reminderTime!;
+      final task = widget.taskToEdit!;
+      _titleController.text = task.title;
+      _descController.text = task.description ?? '';
+      _selectedDate = task.scheduledDate;
+      _recurrenceType = task.recurrenceType;
+      _interval = task.interval;
+      _autoReschedule = task.autoReschedule;
+      _selectedCategoryId = task.categoryId;
+      _hasReminder = task.hasReminder;
+      _isCyclic = task.recurrenceType != RecurrenceType.none;
+      _selectedWeekdays = List.from(task.weekdays);
+      _useDayOfMonth = task.useDayOfMonth;
+      _dayOfMonth = task.dayOfMonth;
+      _weekOfMonth = task.weekOfMonth;
+      _endDate = task.endDate;
+      _maxOccurrences = task.maxOccurrences;
+      
+      if (task.reminderTime != null) {
+        final time = task.reminderTime!;
         _reminderTime = TimeOfDay(hour: time.hour, minute: time.minute);
       } else {
         _reminderTime = const TimeOfDay(hour: 9, minute: 0);
       }
     } else {
       _selectedDate = DateTime.now();
-      _isCyclic = false;
-      _cycleInterval = 1;
+      _recurrenceType = RecurrenceType.none;
+      _interval = 1;
       _autoReschedule = false;
       _selectedCategoryId = 0;
       _hasReminder = false;
       _reminderTime = const TimeOfDay(hour: 9, minute: 0);
+      _selectedWeekdays = [];
+      _useDayOfMonth = true;
+      _isCyclic = false;
+      _dayOfMonth = _selectedDate.day;
+      _weekOfMonth = ((_selectedDate.day - 1) ~/ 7) + 1;
+      _endDate = null;
+      _maxOccurrences = 0;
     }
   }
 
@@ -117,16 +195,24 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
     if (_formKey.currentState!.validate()) {
       if (widget.taskToEdit != null) {
         // Update existing task
-        widget.taskToEdit!.title = _titleController.text;
-        widget.taskToEdit!.description = _descController.text;
-        widget.taskToEdit!.categoryId = _selectedCategoryId;
-        widget.taskToEdit!.scheduledDate = _selectedDate;
-        widget.taskToEdit!.isCyclic = _isCyclic;
-        widget.taskToEdit!.cycleInterval = _isCyclic ? _cycleInterval : null;
-        widget.taskToEdit!.autoReschedule = _autoReschedule;
-        widget.taskToEdit!.hasReminder = _hasReminder;
+        final task = widget.taskToEdit!;
+        task.title = _titleController.text;
+        task.description = _descController.text.isEmpty ? null : _descController.text;
+        task.categoryId = _selectedCategoryId;
+        task.scheduledDate = _selectedDate;
+        task.recurrenceType = _recurrenceType;
+        task.interval = _interval;
+        task.autoReschedule = _autoReschedule;
+        task.hasReminder = _hasReminder;
+        task.weekdays = _selectedWeekdays;
+        task.useDayOfMonth = _useDayOfMonth;
+        task.dayOfMonth = _dayOfMonth;
+        task.weekOfMonth = _weekOfMonth;
+        task.endDate = _endDate;
+        task.maxOccurrences = _maxOccurrences;
+        
         if (_hasReminder) {
-          widget.taskToEdit!.reminderTime = DateTime(
+          task.reminderTime = DateTime(
             _selectedDate.year,
             _selectedDate.month,
             _selectedDate.day,
@@ -134,7 +220,7 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
             _reminderTime.minute,
           );
         } else {
-          widget.taskToEdit!.reminderTime = null;
+          task.reminderTime = null;
         }
 
         ref.read(taskNotifierProvider.notifier).updateTask(widget.taskToEdit!);
@@ -142,11 +228,11 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
         // Create new task
         final newTask = Task()
           ..title = _titleController.text
-          ..description = _descController.text
+          ..description = _descController.text.isEmpty ? null : _descController.text
           ..categoryId = _selectedCategoryId
           ..scheduledDate = _selectedDate
-          ..isCyclic = _isCyclic
-          ..cycleInterval = _isCyclic ? _cycleInterval : null
+          ..recurrenceType = _recurrenceType
+          ..interval = _interval
           ..autoReschedule = _autoReschedule
           ..hasReminder = _hasReminder
           ..reminderTime = _hasReminder
@@ -157,7 +243,13 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
                   _reminderTime.hour,
                   _reminderTime.minute,
                 )
-              : null;
+              : null
+          ..weekdays = _selectedWeekdays
+          ..useDayOfMonth = _useDayOfMonth
+          ..dayOfMonth = _dayOfMonth
+          ..weekOfMonth = _weekOfMonth
+          ..endDate = _endDate
+          ..maxOccurrences = _maxOccurrences;
 
         ref.read(taskNotifierProvider.notifier).addTask(newTask);
       }
@@ -354,7 +446,7 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
                       title: const Text('Cyclic Task'),
                       subtitle: const Text('Repeats automatically after completion'),
                       value: _isCyclic,
-                      activeColor: categoryColor,
+                      activeThumbColor: categoryColor,
                       onChanged: (val) {
                         setState(() {
                           _isCyclic = val;
@@ -363,67 +455,14 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
                     ),
                     if (_isCyclic) ...[
                       const Divider(height: 1),
-                      Padding(
-                        padding: const EdgeInsets.all(AppTheme.spacingM),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 56),
-                            const Text('Repeat every '),
-                            SizedBox(
-                              width: 60,
-                              child: TextFormField(
-                                initialValue: _cycleInterval.toString(),
-                                keyboardType: TextInputType.number,
-                                textAlign: TextAlign.center,
-                                onChanged: (val) {
-                                  setState(() {
-                                    _cycleInterval = int.tryParse(val) ?? 1;
-                                  });
-                                },
-                                decoration: InputDecoration(
-                                  isDense: true,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: AppTheme.spacingS,
-                                    vertical: AppTheme.spacingS,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(AppTheme.radiusS),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const Text(' days'),
-                          ],
-                        ),
-                      ),
+                      _buildSectionTitle('Recurrence'),
+                      _buildRecurrenceSettings(),
+                      if (_recurrenceType != RecurrenceType.none) ...[
+                        const SizedBox(height: 8),
+                        _buildAutoReschedule(),
+                      ],
                     ],
                   ],
-                ),
-              ),
-              const SizedBox(height: AppTheme.spacingM),
-
-              // Auto-Reschedule
-              Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusM),
-                  border: Border.all(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white.withOpacity(0.1)
-                        : Colors.black.withOpacity(0.1),
-                  ),
-                ),
-                child: SwitchListTile(
-                  secondary: Icon(Icons.update_rounded, color: categoryColor),
-                  title: const Text('Auto-Reschedule'),
-                  subtitle: const Text('Move to today if unfinished'),
-                  value: _autoReschedule,
-                  activeColor: categoryColor,
-                  onChanged: (val) {
-                    setState(() {
-                      _autoReschedule = val;
-                    });
-                  },
                 ),
               ),
               const SizedBox(height: AppTheme.spacingM),
@@ -446,7 +485,7 @@ class _AddTaskScreenState extends ConsumerState<AddTaskScreen> {
                       title: const Text('Set Reminder'),
                       subtitle: const Text('Get notified about this task'),
                       value: _hasReminder,
-                      activeColor: categoryColor,
+                      activeThumbColor: categoryColor,
                       onChanged: (val) {
                         setState(() {
                           _hasReminder = val;

@@ -10,11 +10,19 @@ import '../screens/add_task_screen.dart';
 class TaskCardWidget extends ConsumerStatefulWidget {
   final Task task;
   final VoidCallback? onDelete;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback? onSelectionTap;
+  final VoidCallback? onLongPress;
 
   const TaskCardWidget({
     super.key,
     required this.task,
     this.onDelete,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onSelectionTap,
+    this.onLongPress,
   });
 
   @override
@@ -79,64 +87,63 @@ class _TaskCardWidgetState extends ConsumerState<TaskCardWidget> {
     final statusColor = _getTaskStatusColor();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Dismissible(
-      key: ValueKey(widget.task.key),
-      direction: DismissDirection.endToStart,
-      confirmDismiss: (direction) => _confirmDelete(context),
-      onDismissed: (direction) {
-        ref.read(taskNotifierProvider.notifier).deleteTask(widget.task);
-        widget.onDelete?.call();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${widget.task.title} deleted'),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppTheme.radiusM),
+    Widget cardContent = GestureDetector(
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) => setState(() => _isPressed = false),
+      onTapCancel: () => setState(() => _isPressed = false),
+      onTap: widget.isSelectionMode 
+          ? widget.onSelectionTap 
+          : () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AddTaskScreen(taskToEdit: widget.task),
+                ),
+              );
+            },
+      onLongPress: widget.onLongPress,
+      child: AnimatedScale(
+        scale: _isPressed ? 0.97 : 1.0,
+        duration: AppTheme.durationFast,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: AppTheme.spacingM),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(AppTheme.radiusL),
+            border: Border.all(
+              color: widget.isSelected 
+                  ? AppColors.primaryPurple 
+                  : (isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05)),
+              width: widget.isSelected ? 2 : 1,
             ),
-            duration: const Duration(seconds: 2),
+            boxShadow: AppTheme.softShadow(),
           ),
-        );
-      },
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: AppTheme.spacingL),
-        decoration: BoxDecoration(
-          color: AppColors.priorityHigh,
-          borderRadius: BorderRadius.circular(AppTheme.radiusL),
-        ),
-        child: const Icon(Icons.delete_rounded, color: Colors.white, size: 32),
-      ),
-      child: GestureDetector(
-        onTapDown: (_) => setState(() => _isPressed = true),
-        onTapUp: (_) => setState(() => _isPressed = false),
-        onTapCancel: () => setState(() => _isPressed = false),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => AddTaskScreen(taskToEdit: widget.task),
-            ),
-          );
-        },
-        child: AnimatedScale(
-          scale: _isPressed ? 0.97 : 1.0,
-          duration: AppTheme.durationFast,
-          child: Container(
-            margin: const EdgeInsets.only(bottom: AppTheme.spacingM),
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(AppTheme.radiusL),
-              border: Border.all(
-                color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05),
-                width: 1,
-              ),
-              boxShadow: AppTheme.softShadow(),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(AppTheme.radiusL),
-              child: Row(
-                children: [
-                  // Category Color Indicator
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(AppTheme.radiusL),
+            child: Row(
+              children: [
+                // Selection Checkbox or Category Color
+                if (widget.isSelectionMode)
+                  Container(
+                    width: 40,
+                    alignment: Alignment.center,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: widget.isSelected ? AppColors.primaryPurple : Colors.transparent,
+                        border: Border.all(
+                          color: widget.isSelected ? AppColors.primaryPurple : Colors.grey.shade400,
+                          width: 2,
+                        ),
+                      ),
+                      child: widget.isSelected
+                          ? const Icon(Icons.check, size: 16, color: Colors.white)
+                          : null,
+                    ),
+                  )
+                else
                   Container(
                     width: 4,
                     height: 80,
@@ -337,7 +344,40 @@ class _TaskCardWidgetState extends ConsumerState<TaskCardWidget> {
             ),
           ),
         ),
+    );
+
+    if (widget.isSelectionMode) {
+      return cardContent.animate().fadeIn(duration: 300.ms).slideX(begin: 0.2, end: 0);
+    }
+
+    return Dismissible(
+      key: ValueKey(widget.task.key),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (direction) => _confirmDelete(context),
+      onDismissed: (direction) {
+        ref.read(taskNotifierProvider.notifier).deleteTask(widget.task);
+        widget.onDelete?.call();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${widget.task.title} deleted'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusM),
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: AppTheme.spacingL),
+        decoration: BoxDecoration(
+          color: AppColors.priorityHigh,
+          borderRadius: BorderRadius.circular(AppTheme.radiusL),
+        ),
+        child: const Icon(Icons.delete_rounded, color: Colors.white, size: 32),
       ),
+      child: cardContent,
     ).animate().fadeIn(duration: 300.ms).slideX(begin: 0.2, end: 0);
   }
 }

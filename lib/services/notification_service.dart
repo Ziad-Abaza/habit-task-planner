@@ -23,13 +23,13 @@ class NotificationService {
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     
     // iOS initialization settings
-    const iosSettings = DarwinInitializationSettings(
+    final iosSettings = const DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
     );
-
-    const initSettings = InitializationSettings(
+    
+    final initSettings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
     );
@@ -67,8 +67,12 @@ class NotificationService {
 
     await initialize();
     
+    print('Scheduling notification for task: ${task.title}');
+    
     // Request permissions first
     final hasPermission = await requestPermissions();
+    print('Notification permission status: $hasPermission');
+    
     if (!hasPermission) {
       print('Notification permission denied');
       return;
@@ -76,9 +80,12 @@ class NotificationService {
 
     final reminderTime = task.effectiveReminderTime;
     final now = DateTime.now();
+    
+    print('Reminder time: $reminderTime, Now: $now');
 
     // Don't schedule if the reminder time has passed
     if (reminderTime.isBefore(now)) {
+      print('Reminder time is in the past, not scheduling');
       return;
     }
 
@@ -93,6 +100,7 @@ class NotificationService {
 
     // Convert to timezone-aware datetime
     final tzReminderTime = tz.TZDateTime.from(reminderTime, tz.local);
+    print('Zoned reminder time: $tzReminderTime');
 
     // Notification details
     const androidDetails = AndroidNotificationDetails(
@@ -115,19 +123,23 @@ class NotificationService {
       iOS: iosDetails,
     );
 
-    // Schedule the notification
-    await _notifications.zonedSchedule(
-      notificationId,
-      'Task Reminder: ${task.title}',
-      task.description ?? 'You have a task scheduled for today',
-      tzReminderTime,
-      details,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-      payload: 'task_${task.key}',
-    );
+    try {
+      // Schedule the notification
+      await _notifications.zonedSchedule(
+        notificationId,
+        'Task Reminder: ${task.title}',
+        task.description ?? 'You have a task scheduled for today',
+        tzReminderTime,
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+        payload: 'task_${task.key}',
+      );
 
-    print('Scheduled notification for ${task.title} at $tzReminderTime');
+      print('Successfully scheduled notification for ${task.title} at $tzReminderTime with ID $notificationId');
+    } catch (e) {
+      print('Error scheduling notification: $e');
+    }
   }
 
   // Cancel a task reminder

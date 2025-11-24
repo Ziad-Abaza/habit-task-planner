@@ -47,65 +47,14 @@ class Category extends HiveObject {
   // Helper to set IconData
   set icon(IconData value) => iconCodePoint = value.codePoint;
 
-  // Create default categories
-  static List<Category> getDefaultCategories() {
-    return [
-      Category.create(
-        name: 'Work',
-        color: const Color(0xFF6C63FF),
-        icon: Icons.work_rounded,
-        sortOrder: 0,
-        isDefault: true,
-      ),
-      Category.create(
-        name: 'Personal',
-        color: const Color(0xFF00D4FF),
-        icon: Icons.person_rounded,
-        sortOrder: 1,
-        isDefault: true,
-      ),
-      Category.create(
-        name: 'Health',
-        color: const Color(0xFF00E676),
-        icon: Icons.favorite_rounded,
-        sortOrder: 2,
-        isDefault: true,
-      ),
-      Category.create(
-        name: 'Finance',
-        color: const Color(0xFFFFAB00),
-        icon: Icons.account_balance_wallet_rounded,
-        sortOrder: 3,
-        isDefault: true,
-      ),
-      Category.create(
-        name: 'Social',
-        color: const Color(0xFFFF6B9D),
-        icon: Icons.people_rounded,
-        sortOrder: 4,
-        isDefault: true,
-      ),
-      Category.create(
-        name: 'Learning',
-        color: const Color(0xFF7C4DFF),
-        icon: Icons.school_rounded,
-        sortOrder: 5,
-        isDefault: true,
-      ),
-      Category.create(
-        name: 'Hobbies',
-        color: const Color(0xFFFF9100),
-        icon: Icons.palette_rounded,
-        sortOrder: 6,
-        isDefault: true,
-      ),
-      Category.create(
-        name: 'Other',
-        color: const Color(0xFF78909C),
-        icon: Icons.category_rounded,
-        sortOrder: 7,
-        isDefault: true,
-      ),
-    ];
+  // Create a default category
+  static Category getDefaultCategory() {
+    return Category.create(
+      name: 'Default',
+      color: const Color(0xFF6C63FF), // Primary purple color
+      icon: Icons.category_rounded,
+      sortOrder: 0,
+      isDefault: true,
+    );
   }
 }

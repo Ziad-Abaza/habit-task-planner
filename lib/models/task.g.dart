@@ -24,13 +24,16 @@ class TaskAdapter extends TypeAdapter<Task> {
       ..isCompleted = fields[4] as bool
       ..isCyclic = fields[5] as bool
       ..cycleInterval = fields[6] as int?
-      ..autoReschedule = fields[7] as bool;
+      ..autoReschedule = fields[7] as bool
+      ..hasReminder = fields[8] == null ? false : fields[8] as bool
+      ..reminderTime = fields[9] as DateTime?
+      ..notificationId = fields[10] as int?;
   }
 
   @override
   void write(BinaryWriter writer, Task obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.title)
       ..writeByte(1)
@@ -46,7 +49,15 @@ class TaskAdapter extends TypeAdapter<Task> {
       ..writeByte(6)
       ..write(obj.cycleInterval)
       ..writeByte(7)
-      ..write(obj.autoReschedule);
+      ..write(obj.autoReschedule)
+      ..writeByte(8)
+      ..write(obj.hasReminder)
+      ..writeByte(9)
+      ..write(obj.reminderTime)
+      ..writeByte(10)
+      ..write(obj.notificationId)
+      ..writeByte(11)
+      ..write(obj.weekdays);
   }
 
   @override
